@@ -22,6 +22,9 @@ public class User extends FinancialEntity {
     public double getBalance() { return balance; }
     public Map<String, Integer> getPortfolio() { return portfolio; }
 
+    public void setEmail(String email) { this.email = email; }
+    public void setPassword(String password) { this.password = password; }
+
     public void addBalance(double amount) {
         if (amount > 0) {
             this.balance += amount;
@@ -63,5 +66,19 @@ public class User extends FinancialEntity {
             }
         }
         return total;
+    }
+
+    public int getStockQuantity(String symbol) {
+        return portifolio.getOrDefault(symbol, 0);
+    }
+
+    public boolean hasStock(String symbol) {
+        return portifolio.containsKey(symbol) && portifolio.get(symbol) > 0;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("User{name='%s', email='%s', balance=%.2f, stocks=%d}", 
+            getName(), email, balance, portfolio.size());
     }
 }

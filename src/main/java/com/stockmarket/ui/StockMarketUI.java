@@ -6,6 +6,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.*;
 import java.util.List;
 
 public class StockMarketUI extends JFrame {
@@ -14,8 +15,10 @@ public class StockMarketUI extends JFrame {
     private DefaultTableModel stockTableModel;
     private JLabel balanceLabel;
     private JLabel totalValueLabel;
+    private JLabel userLabel;
+    private JTextArea portfolioArea;
     private JTextArea transactionArea;
-    private JPanel chartPanel;
+    private ChartPanel chartPanel;
     private Timer refreshTimer;
 
     public StockMarketUI() {
@@ -26,42 +29,92 @@ public class StockMarketUI extends JFrame {
         
         refreshTimer = new Timer(2000, e -> refreshData());
         refreshTimer.start();
+
+        // Adicionar listener para fechamento
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                market.stopPriceUpdates();
+                if (refreshTimer != null) {
+                    refreshTimer.stop();
+                }
+            }
+        });
     }
 
     private void initializeDefaultData() {
-        market.registerUser("João Silva", "joao@email.com", "123456", 10000.0);
-        market.registerUser("Maria Santos", "maria@email.com", "123456", 15000.0);
-        
-        market.addStock(new Stock("Empresa Alpha", "ALP4", 150.50, "Tecnologia"));
-        market.addStock(new Stock("Empresa Beta", "BET3", 89.75, "Financeiro"));
-        market.addStock(new Stock("Empresa Gamma", "GAM5", 235.30, "Varejo"));
-        market.addStock(new Stock("Empresa Delta", "DEL2", 45.90, "Saúde"));
-        
-        // Criar histórico de preços para testes
-        for (int i = 0; i < 20; i++) {
-            market.updatePrices();
+        try {
+            market.registerUser("João Silva", "joao@email.com", "123456", 10000.0);
+            market.registerUser("Maria Santos", "maria@email.com", "123456", 15000.0);
+            market.registerUser("Pedro Oliveira", "pedro@email.com", "123456", 8000.0);
+            
+            // Ações com diferentes setores
+            market.addStock(new Stock("Alpha Tech", "ALP4", 150.50, "Tecnologia"));
+            market.addStock(new Stock("Beta Bank", "BET3", 89.75, "Financeiro"));
+            market.addStock(new Stock("Gamma Retail", "GAM5", 235.30, "Varejo"));
+            market.addStock(new Stock("Delta Health", "DEL2", 45.90, "Saúde"));
+            market.addStock(new Stock("Epsilon Energy", "EPS1", 320.00, "Energia"));
+            market.addStock(new Stock("Zeta Telecom", "ZET6", 67.80, "Telecom"));
+            
+            // Criar histórico de preços para gráficos
+            for (int i = 0; i < 30; i++) {
+                market.updatePrices();
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao inicializar dados: " + e.getMessage());
         }
     }
 
     private void initUI() {
-        setTitle("Simulador de Mercado de Ações");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 800);
+        setTitle("Simulador de Mercado de Ações - MC322");
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        setSize(1300, 850);
         setLocationRelativeTo(null);
+        setLayout(new BorderLayout(10, 10));
 
-        // Menu
+        // Criar menu
+        createMenuBar();
+
+        // Painel superior - informações do usuário
+        createTopPanel();
+
+        // Painel central - split com tabela e carteira
+        createCenterPanel();
+
+        // Painel inferior - gráfico
+        createBottomPanel();
+
+        // Atualizar dados inicialmente
+        refreshData();
+    }
+
+    private void createMenuBar() {
         JMenuBar menuBar = new JMenuBar();
+
+        // Menu Arquivo
         JMenu fileMenu = new JMenu("Arquivo");
         JMenuItem saveItem = new JMenuItem("Salvar Dados");
-        JMenuItem loadItem = new JMenuItem("Carregar Dados");
-        JMenuItem exitItem = new JMenuItem("Sair");
-
+        saveItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, 
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         saveItem.addActionListener(e -> saveData());
+
+        JMenuItem loadItem = new JMenuItem("Carregar Dados");
+        loadItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_L, 
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
         loadItem.addActionListener(e -> loadData());
-        exitItem.addActionListener(e -> System.exit(0));
+
+        JMenuItem exportItem = new JMenuItem("Exportar CSV");
+        exportItem.addActionListener(e -> exportData());
+
+        JMenuItem exitItem = new JMenuItem("Sair");
+        exitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Q, 
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
+        exitItem.addActionListener(e -> exitApplication());
 
         fileMenu.add(saveItem);
         fileMenu.add(loadItem);
+        fileMenu.addSeparator();
+        fileMenu.add(exportItem);
         fileMenu.addSeparator();
         fileMenu.add(exitItem);
         menuBar.add(fileMenu);
@@ -69,14 +122,18 @@ public class StockMarketUI extends JFrame {
         // Menu Usuário
         JMenu userMenu = new JMenu("Usuário");
         JMenuItem loginItem = new JMenuItem("Login");
-        JMenuItem registerItem = new JMenuItem("Registrar");
-        JMenuItem logoutItem = new JMenuItem("Logout");
-
+        loginItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_L, 
+            Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx() | InputEvent.SHIFT_DOWN_MASK));
         loginItem.addActionListener(e -> showLoginDialog());
+
+        JMenuItem registerItem = new JMenuItem("Registrar");
         registerItem.addActionListener(e -> showRegisterDialog());
+
+        JMenuItem logoutItem = new JMenuItem("Logout");
         logoutItem.addActionListener(e -> {
             market.logout();
             updateUserInfo();
+            JOptionPane.showMessageDialog(this, "Logout realizado com sucesso!");
         });
 
         userMenu.add(loginItem);
@@ -85,41 +142,73 @@ public class StockMarketUI extends JFrame {
         userMenu.add(logoutItem);
         menuBar.add(userMenu);
 
+        // Menu Ações
+        JMenu stocksMenu = new JMenu("Ações");
+        JMenuItem addStockItem = new JMenuItem("Adicionar Ação");
+        addStockItem.addActionListener(e -> showAddStockDialog());
+
+        JMenuItem updatePricesItem = new JMenuItem("Atualizar Preços");
+        updatePricesItem.addActionListener(e -> {
+            market.updatePrices();
+            refreshData();
+            JOptionPane.showMessageDialog(this, "Preços atualizados!");
+        });
+
+        stocksMenu.add(addStockItem);
+        stocksMenu.add(updatePricesItem);
+        menuBar.add(stocksMenu);
+
+        // Menu Ajuda
+        JMenu helpMenu = new JMenu("Ajuda");
+        JMenuItem aboutItem = new JMenuItem("Sobre");
+        aboutItem.addActionListener(e -> showAboutDialog());
+        helpMenu.add(aboutItem);
+        menuBar.add(helpMenu);
+
         setJMenuBar(menuBar);
+    }
 
-        // Layout principal
-        setLayout(new BorderLayout(10, 10));
-
-        // Painel superior - informações do usuário
-        JPanel topPanel = new JPanel(new GridLayout(1, 3, 10, 10));
+    private void createTopPanel() {
+        JPanel topPanel = new JPanel(new GridLayout(1, 4, 15, 10));
         topPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        topPanel.setBackground(new Color(240, 240, 240));
 
-        JPanel userPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        userPanel.add(new JLabel("Usuário: "));
-        JLabel userLabel = new JLabel("Não logado");
-        userLabel.setName("userLabel");
-        userPanel.add(userLabel);
-
+        userLabel = new JLabel("Usuário: Não logado");
+        userLabel.setFont(new Font("Arial", Font.BOLD, 12));
         balanceLabel = new JLabel("Saldo: R$ 0,00");
-        totalValueLabel = new JLabel("Total Carteira: R$ 0,00");
+        balanceLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        totalValueLabel = new JLabel("Patrimônio: R$ 0,00");
+        totalValueLabel.setFont(new Font("Arial", Font.BOLD, 12));
 
-        topPanel.add(userPanel);
+        JLabel statusLabel = new JLabel("Status: Online");
+        statusLabel.setForeground(new Color(0, 150, 0));
+        statusLabel.setFont(new Font("Arial", Font.PLAIN, 10));
+
+        topPanel.add(userLabel);
         topPanel.add(balanceLabel);
         topPanel.add(totalValueLabel);
+        topPanel.add(statusLabel);
         add(topPanel, BorderLayout.NORTH);
+    }
 
-        // Painel central - tabela de ações e carteira
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-        splitPane.setResizeWeight(0.6);
+    private void createCenterPanel() {
+        JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        mainSplit.setResizeWeight(0.6);
+        mainSplit.setDividerSize(5);
 
-        // Tabela de ações
-        String[] columns = {"Símbolo", "Nome", "Preço", "Variação", "Setor"};
+        // Painel esquerdo - Tabela de ações
+        JPanel leftPanel = new JPanel(new BorderLayout(5, 5));
+        
+        String[] columns = {"Símbolo", "Nome", "Preço", "Variação", "Setor", "Volume"};
         stockTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
         };
         stockTable = new JTable(stockTableModel);
         stockTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        stockTable.setRowHeight(25);
+        stockTable.getTableHeader().setReorderingAllowed(false);
+        
         stockTable.addMouseListener(new MouseAdapter() {
             public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() == 2) {
@@ -127,136 +216,55 @@ public class StockMarketUI extends JFrame {
                 }
             }
         });
+
         JScrollPane stockScroll = new JScrollPane(stockTable);
-        stockScroll.setBorder(BorderFactory.createTitledBorder("Cotações"));
+        stockScroll.setBorder(BorderFactory.createTitledBorder("Cotações em Tempo Real"));
 
-        // Painel de ações
-        JPanel stockPanel = new JPanel(new BorderLayout());
-        stockPanel.add(stockScroll, BorderLayout.CENTER);
-
-        JPanel stockButtons = new JPanel(new FlowLayout());
+        JPanel stockButtonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
         JButton tradeButton = new JButton("Negociar");
-        JButton refreshButton = new JButton("Atualizar");
-        
+        tradeButton.setPreferredSize(new Dimension(100, 30));
         tradeButton.addActionListener(e -> showTradeDialog());
+
+        JButton refreshButton = new JButton("Atualizar");
+        refreshButton.setPreferredSize(new Dimension(100, 30));
         refreshButton.addActionListener(e -> refreshData());
-        
-        stockButtons.add(tradeButton);
-        stockButtons.add(refreshButton);
-        stockPanel.add(stockButtons, BorderLayout.SOUTH);
 
-        // Painel direito - carteira e transações
-        JPanel rightPanel = new JPanel(new BorderLayout(10, 10));
+        stockButtonPanel.add(tradeButton);
+        stockButtonPanel.add(refreshButton);
 
-        // Carteira
-        JTextArea portfolioArea = new JTextArea(10, 20);
+        leftPanel.add(stockScroll, BorderLayout.CENTER);
+        leftPanel.add(stockButtonPanel, BorderLayout.SOUTH);
+
+        // Painel direito - Carteira e transações
+        JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
+
+        portfolioArea = new JTextArea(8, 20);
         portfolioArea.setEditable(false);
-        portfolioArea.setName("portfolioArea");
+        portfolioArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
         JScrollPane portfolioScroll = new JScrollPane(portfolioArea);
-        portfolioScroll.setBorder(BorderFactory.createTitledBorder("Carteira"));
+        portfolioScroll.setBorder(BorderFactory.createTitledBorder("Minha Carteira"));
 
-        // Transações
-        transactionArea = new JTextArea(10, 20);
+        transactionArea = new JTextArea(8, 20);
         transactionArea.setEditable(false);
-        transactionArea.setName("transactionArea");
+        transactionArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
         JScrollPane transactionScroll = new JScrollPane(transactionArea);
-        transactionScroll.setBorder(BorderFactory.createTitledBorder("Histórico"));
+        transactionScroll.setBorder(BorderFactory.createTitledBorder("Histórico de Transações"));
 
         JSplitPane rightSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
         rightSplit.setTopComponent(portfolioScroll);
         rightSplit.setBottomComponent(transactionScroll);
         rightSplit.setResizeWeight(0.5);
+        rightSplit.setDividerSize(5);
 
         rightPanel.add(rightSplit, BorderLayout.CENTER);
-        splitPane.setLeftComponent(stockPanel);
-        splitPane.setRightComponent(rightPanel);
-        add(splitPane, BorderLayout.CENTER);
-
-        // Gráfico
-        chartPanel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                drawChart(g);
-            }
-        };
-        chartPanel.setPreferredSize(new Dimension(800, 200));
-        chartPanel.setBorder(BorderFactory.createTitledBorder("Gráfico de Preços"));
-        add(chartPanel, BorderLayout.SOUTH);
-
-        refreshData();
-
-        // Registrar para atualização automática
-        Timer timer = new Timer(3000, e -> refreshData());
-        timer.start();
+        mainSplit.setLeftComponent(leftPanel);
+        mainSplit.setRightComponent(rightPanel);
+        add(mainSplit, BorderLayout.CENTER);
     }
 
-    private void drawChart(Graphics g) {
-        Graphics2D g2d = (Graphics2D) g;
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        int width = chartPanel.getWidth() - 40;
-        int height = chartPanel.getHeight() - 40;
-        int x0 = 20;
-        int y0 = 20;
-
-        g2d.setColor(Color.WHITE);
-        g2d.fillRect(x0, y0, width, height);
-
-        List<Stock> stocks = market.getStocks();
-        if (stocks.isEmpty()) return;
-
-        // Encontrar máximo e mínimo para escala
-        double maxPrice = 0;
-        double minPrice = Double.MAX_VALUE;
-        for (Stock stock : stocks) {
-            List<Double> history = stock.getPriceHistory();
-            for (double price : history) {
-                if (price > maxPrice) maxPrice = price;
-                if (price < minPrice) minPrice = price;
-            }
-        }
-        double range = maxPrice - minPrice;
-        if (range == 0) range = 1;
-
-        // Desenhar linhas para cada ação
-        Color[] colors = {Color.RED, Color.BLUE, Color.GREEN, Color.ORANGE};
-        int colorIndex = 0;
-
-        for (Stock stock : stocks) {
-            List<Double> history = stock.getPriceHistory();
-            if (history.size() < 2) continue;
-
-            g2d.setColor(colors[colorIndex % colors.length]);
-            colorIndex++;
-
-            int points = history.size();
-            double step = (double) width / (points - 1);
-
-            int[] xPoints = new int[points];
-            int[] yPoints = new int[points];
-
-            for (int i = 0; i < points; i++) {
-                xPoints[i] = x0 + (int)(i * step);
-                double normalized = (history.get(i) - minPrice) / range;
-                yPoints[i] = y0 + height - (int)(normalized * height);
-            }
-
-            g2d.drawPolyline(xPoints, yPoints, points);
-
-            // Legenda
-            int legendX = x0 + width - 120 + (colorIndex - 1) * 120 / 3;
-            g2d.fillRect(legendX, y0 - 15, 10, 10);
-            g2d.setColor(Color.BLACK);
-            g2d.drawString(stock.getSymbol(), legendX + 15, y0 - 5);
-            g2d.setColor(colors[(colorIndex - 1) % colors.length]);
-        }
-
-        // Eixos
-        g2d.setColor(Color.BLACK);
-        g2d.drawRect(x0, y0, width, height);
-        g2d.drawString(String.format("R$%.2f", maxPrice), x0 + 5, y0 + 15);
-        g2d.drawString(String.format("R$%.2f", minPrice), x0 + 5, y0 + height - 5);
+    private void createBottomPanel() {
+        chartPanel = new ChartPanel(market);
+        add(chartPanel, BorderLayout.SOUTH);
     }
 
     private void refreshData() {
@@ -270,222 +278,321 @@ public class StockMarketUI extends JFrame {
     private void refreshStockTable() {
         stockTableModel.setRowCount(0);
         for (Stock stock : market.getStocks()) {
-            stockTableModel.addRow(new Object[]{
-                stock.getSymbol(),
-                stock.getName(),
-                String.format("R$ %.2f", stock.getCurrentPrice()),
-                String.format("%.2f%%", stock.getPriceChange()),
-                stock.getSector()
-            });
+            String change = String.format("%+.2f%%", stock.getPriceChange());
+            // Cor da variação
+            if (stock.getPriceChange() > 0) {
+                stockTableModel.addRow(new Object[]{
+                    stock.getSymbol(),
+                    stock.getName(),
+                    String.format("R$ %.2f", stock.getCurrentPrice()),
+                    change,
+                    stock.getSector(),
+                    stock.getVolume()
+                });
+            } else {
+                stockTableModel.addRow(new Object[]{
+                    stock.getSymbol(),
+                    stock.getName(),
+                    String.format("R$ %.2f", stock.getCurrentPrice()),
+                    change,
+                    stock.getSector(),
+                    stock.getVolume()
+                });
+            }
         }
     }
 
     private void updateUserInfo() {
         User user = market.getCurrentUser();
-        JLabel userLabel = (JLabel) ((JPanel) ((JPanel) getContentPane().getComponent(0)).getComponent(0)).getComponent(1);
-        
         if (user != null) {
-            userLabel.setText(user.getName() + " (" + user.getEmail() + ")");
+            userLabel.setText("Usuário: " + user.getName() + " (" + user.getEmail() + ")");
             balanceLabel.setText(String.format("Saldo: R$ %.2f", user.getBalance()));
             
-            // Calcular valor total da carteira
-            double totalValue = 0;
-            var portfolio = user.getPortfolio();
-            for (var entry : portfolio.entrySet()) {
-                Stock stock = market.findStock(entry.getKey());
-                if (stock != null) {
-                    totalValue += stock.getCurrentPrice() * entry.getValue();
-                }
-            }
-            totalValueLabel.setText(String.format("Total Carteira: R$ %.2f", totalValue + user.getBalance()));
+            double portfolioValue = market.calculatePortfolioValue(user);
+            double total = user.getBalance() + portfolioValue;
+            totalValueLabel.setText(String.format("Patrimônio: R$ %.2f (Carteira: R$ %.2f)", 
+                total, portfolioValue));
         } else {
-            userLabel.setText("Não logado");
+            userLabel.setText("Usuário: Não logado");
             balanceLabel.setText("Saldo: R$ 0,00");
-            totalValueLabel.setText("Total Carteira: R$ 0,00");
+            totalValueLabel.setText("Patrimônio: R$ 0,00");
         }
     }
 
     private void updatePortfolio() {
-        JTextArea portfolioArea = (JTextArea) ((JScrollPane) ((JSplitPane) ((JSplitPane) getContentPane()
-            .getComponent(2)).getRightComponent()).getComponent(0)).getViewport().getView();
-        
         User user = market.getCurrentUser();
         if (user == null) {
-            portfolioArea.setText("Nenhum usuário logado");
+            portfolioArea.setText("Nenhum usuário logado.");
+            return;
+        }
+
+        var portfolio = user.getPortfolio();
+        if (portfolio.isEmpty()) {
+            portfolioArea.setText("Carteira vazia.\n\nUse a opção 'Negociar' para comprar ações.");
             return;
         }
 
         StringBuilder sb = new StringBuilder();
-        var portfolio = user.getPortfolio();
-        if (portfolio.isEmpty()) {
-            sb.append("Carteira vazia");
-        } else {
-            for (var entry : portfolio.entrySet()) {
-                Stock stock = market.findStock(entry.getKey());
-                if (stock != null) {
-                    double value = stock.getCurrentPrice() * entry.getValue();
-                    sb.append(String.format("%s: %d ações (R$ %.2f cada) - Total: R$ %.2f\n",
-                        entry.getKey(), entry.getValue(), stock.getCurrentPrice(), value));
-                } else {
-                    sb.append(String.format("%s: %d ações (Ação não encontrada)\n",
-                        entry.getKey(), entry.getValue()));
-                }
+        sb.append(String.format("Carteira de %s\n", user.getName()));
+        sb.append("=".repeat(50)).append("\n\n");
+        
+        double totalValue = 0;
+        for (var entry : portfolio.entrySet()) {
+            Stock stock = market.findStock(entry.getKey());
+            if (stock != null) {
+                double value = stock.getCurrentPrice() * entry.getValue();
+                totalValue += value;
+                sb.append(String.format("%-6s %4d ações x R$%7.2f = R$%8.2f\n",
+                    entry.getKey(), entry.getValue(), 
+                    stock.getCurrentPrice(), value));
             }
         }
+        sb.append("\n").append("=".repeat(50)).append("\n");
+        sb.append(String.format("Total Carteira: R$ %.2f\n", totalValue));
         portfolioArea.setText(sb.toString());
     }
 
     private void updateTransactions() {
-        JTextArea transArea = (JTextArea) ((JScrollPane) ((JSplitPane) ((JSplitPane) getContentPane()
-            .getComponent(2)).getRightComponent()).getComponent(1)).getViewport().getView();
-        
         User user = market.getCurrentUser();
         if (user == null) {
-            transArea.setText("Nenhum usuário logado");
+            transactionArea.setText("Nenhum usuário logado.");
+            return;
+        }
+
+        List<Transaction> userTransactions = market.getUserTransactions(user);
+        if (userTransactions.isEmpty()) {
+            transactionArea.setText("Nenhuma transação realizada.");
             return;
         }
 
         StringBuilder sb = new StringBuilder();
-        var transactions = market.getTransactions();
-        boolean hasTransactions = false;
-        for (Transaction t : transactions) {
-            if (t.getUserId().equals(user.getId())) {
-                sb.append(t.toString()).append("\n");
-                hasTransactions = true;
-            }
+        sb.append(String.format("Histórico de %s\n", user.getName()));
+        sb.append("=".repeat(50)).append("\n\n");
+        
+        for (Transaction t : userTransactions) {
+            sb.append(t.toString()).append("\n");
         }
-        if (!hasTransactions) {
-            sb.append("Nenhuma transação realizada");
-        }
-        transArea.setText(sb.toString());
+        transactionArea.setText(sb.toString());
     }
+
+    // ========== Diálogos ==========
 
     private void showLoginDialog() {
         JDialog dialog = new JDialog(this, "Login", true);
-        dialog.setLayout(new GridLayout(3, 2, 10, 10));
-        dialog.setSize(300, 150);
+        dialog.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        dialog.setSize(350, 200);
         dialog.setLocationRelativeTo(this);
 
-        dialog.add(new JLabel("Email:"));
-        JTextField emailField = new JTextField();
-        dialog.add(emailField);
-        dialog.add(new JLabel("Senha:"));
-        JPasswordField passField = new JPasswordField();
-        dialog.add(passField);
+        gbc.gridx = 0; gbc.gridy = 0;
+        dialog.add(new JLabel("Email:"), gbc);
+        gbc.gridx = 1;
+        JTextField emailField = new JTextField(15);
+        dialog.add(emailField, gbc);
 
+        gbc.gridx = 0; gbc.gridy = 1;
+        dialog.add(new JLabel("Senha:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField passField = new JPasswordField(15);
+        dialog.add(passField, gbc);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton loginBtn = new JButton("Login");
+        loginBtn.setPreferredSize(new Dimension(100, 30));
         JButton cancelBtn = new JButton("Cancelar");
+        cancelBtn.setPreferredSize(new Dimension(100, 30));
 
         loginBtn.addActionListener(e -> {
             String email = emailField.getText();
             String password = new String(passField.getPassword());
             User user = market.login(email, password);
             if (user != null) {
-                JOptionPane.showMessageDialog(dialog, "Login realizado com sucesso!");
+                JOptionPane.showMessageDialog(dialog, 
+                    "Bem-vindo, " + user.getName() + "!", 
+                    "Login", JOptionPane.INFORMATION_MESSAGE);
                 dialog.dispose();
                 refreshData();
             } else {
-                JOptionPane.showMessageDialog(dialog, "Email ou senha inválidos!", "Erro", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dialog, 
+                    "Email ou senha inválidos!", 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
             }
         });
 
         cancelBtn.addActionListener(e -> dialog.dispose());
 
-        dialog.add(loginBtn);
-        dialog.add(cancelBtn);
+        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
+        buttonPanel.add(loginBtn);
+        buttonPanel.add(cancelBtn);
+        dialog.add(buttonPanel, gbc);
+
         dialog.setVisible(true);
     }
 
     private void showRegisterDialog() {
         JDialog dialog = new JDialog(this, "Registrar Usuário", true);
-        dialog.setLayout(new GridLayout(5, 2, 10, 10));
-        dialog.setSize(350, 250);
+        dialog.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        dialog.setSize(400, 300);
         dialog.setLocationRelativeTo(this);
 
-        dialog.add(new JLabel("Nome:"));
-        JTextField nameField = new JTextField();
-        dialog.add(nameField);
-        dialog.add(new JLabel("Email:"));
-        JTextField emailField = new JTextField();
-        dialog.add(emailField);
-        dialog.add(new JLabel("Senha:"));
-        JPasswordField passField = new JPasswordField();
-        dialog.add(passField);
-        dialog.add(new JLabel("Saldo Inicial:"));
-        JTextField balanceField = new JTextField("1000.00");
-        dialog.add(balanceField);
+        gbc.gridx = 0; gbc.gridy = 0;
+        dialog.add(new JLabel("Nome:"), gbc);
+        gbc.gridx = 1;
+        JTextField nameField = new JTextField(15);
+        dialog.add(nameField, gbc);
 
+        gbc.gridx = 0; gbc.gridy = 1;
+        dialog.add(new JLabel("Email:"), gbc);
+        gbc.gridx = 1;
+        JTextField emailField = new JTextField(15);
+        dialog.add(emailField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
+        dialog.add(new JLabel("Senha:"), gbc);
+        gbc.gridx = 1;
+        JPasswordField passField = new JPasswordField(15);
+        dialog.add(passField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        dialog.add(new JLabel("Saldo Inicial:"), gbc);
+        gbc.gridx = 1;
+        JTextField balanceField = new JTextField("1000.00", 15);
+        dialog.add(balanceField, gbc);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton registerBtn = new JButton("Registrar");
+        registerBtn.setPreferredSize(new Dimension(100, 30));
         JButton cancelBtn = new JButton("Cancelar");
+        cancelBtn.setPreferredSize(new Dimension(100, 30));
 
         registerBtn.addActionListener(e -> {
             try {
-                String name = nameField.getText();
-                String email = emailField.getText();
+                String name = nameField.getText().trim();
+                String email = emailField.getText().trim();
                 String password = new String(passField.getPassword());
-                double balance = Double.parseDouble(balanceField.getText());
+                double balance = Double.parseDouble(balanceField.getText().trim());
 
                 if (name.isEmpty() || email.isEmpty() || password.isEmpty()) {
-                    JOptionPane.showMessageDialog(dialog, "Preencha todos os campos!", "Erro", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(dialog, 
+                        "Preencha todos os campos!", 
+                        "Erro", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                if (balance < 0) {
+                    JOptionPane.showMessageDialog(dialog, 
+                        "Saldo não pode ser negativo!", 
+                        "Erro", JOptionPane.ERROR_MESSAGE);
                     return;
                 }
 
                 market.registerUser(name, email, password, balance);
-                JOptionPane.showMessageDialog(dialog, "Usuário registrado com sucesso!");
+                JOptionPane.showMessageDialog(dialog, 
+                    "Usuário registrado com sucesso!\nFaça login para continuar.", 
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
                 dialog.dispose();
             } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(dialog, "Saldo inválido!", "Erro", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dialog, 
+                    "Saldo inválido!", 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(dialog, 
+                    ex.getMessage(), 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
             }
         });
 
         cancelBtn.addActionListener(e -> dialog.dispose());
 
-        dialog.add(registerBtn);
-        dialog.add(cancelBtn);
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        buttonPanel.add(registerBtn);
+        buttonPanel.add(cancelBtn);
+        dialog.add(buttonPanel, gbc);
+
         dialog.setVisible(true);
     }
 
     private void showTradeDialog() {
         User user = market.getCurrentUser();
         if (user == null) {
-            JOptionPane.showMessageDialog(this, "Faça login primeiro!", "Aviso", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, 
+                "Faça login primeiro!", 
+                "Aviso", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         int selectedRow = stockTable.getSelectedRow();
         if (selectedRow < 0) {
-            JOptionPane.showMessageDialog(this, "Selecione uma ação na tabela!", "Aviso", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, 
+                "Selecione uma ação na tabela!", 
+                "Aviso", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         String symbol = (String) stockTableModel.getValueAt(selectedRow, 0);
         Stock stock = market.findStock(symbol);
-        if (stock == null) return;
+        if (stock == null) {
+            JOptionPane.showMessageDialog(this, 
+                "Ação não encontrada!", 
+                "Erro", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
 
         JDialog dialog = new JDialog(this, "Negociar - " + symbol, true);
-        dialog.setLayout(new GridLayout(5, 2, 10, 10));
+        dialog.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
         dialog.setSize(350, 250);
         dialog.setLocationRelativeTo(this);
 
-        dialog.add(new JLabel("Ação: " + symbol));
-        dialog.add(new JLabel(String.format("Preço: R$ %.2f", stock.getCurrentPrice())));
-        dialog.add(new JLabel("Quantidade:"));
-        JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1000, 1));
-        dialog.add(qtySpinner);
+        // Informações da ação
+        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridwidth = 2;
+        JLabel infoLabel = new JLabel(
+            String.format("<html><b>%s</b> - %s<br>Preço: R$ %.2f | Saldo: R$ %.2f</html>",
+                symbol, stock.getName(), stock.getCurrentPrice(), user.getBalance()),
+            SwingConstants.CENTER
+        );
+        dialog.add(infoLabel, gbc);
 
+        gbc.gridy = 1;
+        gbc.gridwidth = 1;
+        dialog.add(new JLabel("Quantidade:"), gbc);
+        gbc.gridx = 1;
+        JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1000, 1));
+        qtySpinner.setPreferredSize(new Dimension(100, 25));
+        dialog.add(qtySpinner, gbc);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
         JButton buyBtn = new JButton("Comprar");
+        buyBtn.setPreferredSize(new Dimension(100, 30));
+        buyBtn.setBackground(new Color(0, 150, 0));
+        buyBtn.setForeground(Color.WHITE);
+
         JButton sellBtn = new JButton("Vender");
+        sellBtn.setPreferredSize(new Dimension(100, 30));
+        sellBtn.setBackground(new Color(200, 0, 0));
+        sellBtn.setForeground(Color.WHITE);
+
         JButton cancelBtn = new JButton("Cancelar");
+        cancelBtn.setPreferredSize(new Dimension(100, 30));
 
         buyBtn.addActionListener(e -> {
             try {
                 int qty = (int) qtySpinner.getValue();
                 market.buyStock(user, stock, qty);
-                JOptionPane.showMessageDialog(dialog, "Compra realizada com sucesso!");
+                JOptionPane.showMessageDialog(dialog, 
+                    String.format("Compra realizada!\n%d ações de %s.", qty, symbol),
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
                 dialog.dispose();
                 refreshData();
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(dialog, ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dialog, 
+                    ex.getMessage(), 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -493,32 +600,147 @@ public class StockMarketUI extends JFrame {
             try {
                 int qty = (int) qtySpinner.getValue();
                 market.sellStock(user, stock, qty);
-                JOptionPane.showMessageDialog(dialog, "Venda realizada com sucesso!");
+                JOptionPane.showMessageDialog(dialog, 
+                    String.format("Venda realizada!\n%d ações de %s.", qty, symbol),
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
                 dialog.dispose();
                 refreshData();
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(dialog, ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(dialog, 
+                    ex.getMessage(), 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
             }
         });
 
         cancelBtn.addActionListener(e -> dialog.dispose());
 
-        dialog.add(buyBtn);
-        dialog.add(sellBtn);
-        dialog.add(cancelBtn);
+        gbc.gridx = 0; gbc.gridy = 2; gbc.gridwidth = 2;
+        buttonPanel.add(buyBtn);
+        buttonPanel.add(sellBtn);
+        buttonPanel.add(cancelBtn);
+        dialog.add(buttonPanel, gbc);
+
         dialog.setVisible(true);
     }
 
+    private void showAddStockDialog() {
+        JDialog dialog = new JDialog(this, "Adicionar Ação", true);
+        dialog.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        dialog.setSize(350, 250);
+        dialog.setLocationRelativeTo(this);
+
+        gbc.gridx = 0; gbc.gridy = 0;
+        dialog.add(new JLabel("Nome:"), gbc);
+        gbc.gridx = 1;
+        JTextField nameField = new JTextField(15);
+        dialog.add(nameField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 1;
+        dialog.add(new JLabel("Símbolo:"), gbc);
+        gbc.gridx = 1;
+        JTextField symbolField = new JTextField(15);
+        dialog.add(symbolField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 2;
+        dialog.add(new JLabel("Preço Inicial:"), gbc);
+        gbc.gridx = 1;
+        JTextField priceField = new JTextField("100.00", 15);
+        dialog.add(priceField, gbc);
+
+        gbc.gridx = 0; gbc.gridy = 3;
+        dialog.add(new JLabel("Setor:"), gbc);
+        gbc.gridx = 1;
+        String[] sectors = {"Tecnologia", "Financeiro", "Varejo", "Saúde", "Energia", "Telecom", "Outros"};
+        JComboBox<String> sectorCombo = new JComboBox<>(sectors);
+        dialog.add(sectorCombo, gbc);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        JButton addBtn = new JButton("Adicionar");
+        addBtn.setPreferredSize(new Dimension(100, 30));
+        JButton cancelBtn = new JButton("Cancelar");
+        cancelBtn.setPreferredSize(new Dimension(100, 30));
+
+        addBtn.addActionListener(e -> {
+            try {
+                String name = nameField.getText().trim();
+                String symbol = symbolField.getText().trim().toUpperCase();
+                double price = Double.parseDouble(priceField.getText().trim());
+                String sector = (String) sectorCombo.getSelectedItem();
+
+                if (name.isEmpty() || symbol.isEmpty()) {
+                    JOptionPane.showMessageDialog(dialog, 
+                        "Preencha todos os campos!", 
+                        "Erro", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                Stock stock = new Stock(name, symbol, price, sector);
+                market.addStock(stock);
+                JOptionPane.showMessageDialog(dialog, 
+                    "Ação adicionada com sucesso!", 
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                dialog.dispose();
+                refreshData();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dialog, 
+                    "Preço inválido!", 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(dialog, 
+                    ex.getMessage(), 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        cancelBtn.addActionListener(e -> dialog.dispose());
+
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 2;
+        buttonPanel.add(addBtn);
+        buttonPanel.add(cancelBtn);
+        dialog.add(buttonPanel, gbc);
+
+        dialog.setVisible(true);
+    }
+
+    private void showAboutDialog() {
+        JOptionPane.showMessageDialog(this,
+            "<html><h2>Simulador de Mercado de Ações</h2>" +
+            "<p>Versão 1.0.0</p>" +
+            "<p>MC322 - Programação Orientada a Objetos</p>" +
+            "<p>UNICAMP - 2026</p>" +
+            "<hr>" +
+            "<p>Sistema para simulação de operações no mercado de ações.</p>" +
+            "<p>Principais funcionalidades:</p>" +
+            "<ul>" +
+            "<li>Compra e venda de ações</li>" +
+            "<li>Atualização automática de preços</li>" +
+            "<li>Gráficos de desempenho</li>" +
+            "<li>Histórico de transações</li>" +
+            "<li>Persistência de dados</li>" +
+            "</ul></html>",
+            "Sobre",
+            JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
+    // ========== Persistência ==========
+
     private void saveData() {
         JFileChooser chooser = new JFileChooser(".");
+        chooser.setSelectedFile(new java.io.File("market_data.txt"));
         if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 String file = chooser.getSelectedFile().getPath();
                 if (!file.endsWith(".txt")) file += ".txt";
                 market.saveToFile(file);
-                JOptionPane.showMessageDialog(this, "Dados salvos com sucesso!");
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Erro ao salvar: " + ex.getMessage(), 
+                JOptionPane.showMessageDialog(this, 
+                    "Dados salvos em: " + file, 
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, 
+                    "Erro ao salvar: " + ex.getMessage(), 
                     "Erro", JOptionPane.ERROR_MESSAGE);
             }
         }
@@ -529,14 +751,59 @@ public class StockMarketUI extends JFrame {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 market.loadFromFile(chooser.getSelectedFile().getPath());
-                JOptionPane.showMessageDialog(this, "Dados carregados com sucesso!");
+                JOptionPane.showMessageDialog(this, 
+                    "Dados carregados com sucesso!", 
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
                 refreshData();
-            } catch (IOException ex) {
-                JOptionPane.showMessageDialog(this, "Erro ao carregar: " + ex.getMessage(), 
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, 
+                    "Erro ao carregar: " + ex.getMessage(), 
                     "Erro", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
+
+    private void exportData() {
+        JFileChooser chooser = new JFileChooser(".");
+        chooser.setSelectedFile(new java.io.File("export.csv"));
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            try {
+                String file = chooser.getSelectedFile().getPath();
+                if (!file.endsWith(".csv")) file += ".csv";
+                market.exportToCSV(file);
+                JOptionPane.showMessageDialog(this, 
+                    "Dados exportados para: " + file, 
+                    "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, 
+                    "Erro ao exportar: " + ex.getMessage(), 
+                    "Erro", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void exitApplication() {
+        int option = JOptionPane.showConfirmDialog(this,
+            "Deseja salvar os dados antes de sair?",
+            "Sair",
+            JOptionPane.YES_NO_CANCEL_OPTION,
+            JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (option == JOptionPane.YES_OPTION) {
+            saveData();
+        } else if (option == JOptionPane.CANCEL_OPTION) {
+            return;
+        }
+
+        market.stopPriceUpdates();
+        if (refreshTimer != null) {
+            refreshTimer.stop();
+        }
+        System.exit(0);
+    }
+
+    // ========== Main ==========
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {

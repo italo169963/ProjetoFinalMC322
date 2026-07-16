@@ -25,6 +25,9 @@ public class Stock extends FinancialEntity {
     public int getVolume() { return volume; }
     public String getSector() { return sector; }
     public List<Double> getPriceHistory() { return new ArrayList<>(priceHistory); }
+    public double getOpeningPrice() { return openingPrice; }
+
+    public void setSector(String sector) {this.sector = sector; }
 
     public void updatePrice(double newPrice) {
         if (newPrice > 0) {
@@ -44,5 +47,28 @@ public class Stock extends FinancialEntity {
         if (priceHistory.size() < 2) return 0;
         double previous = priceHistory.get(priceHistory.size() - 2);
         return ((currentPrice - previous) / previous) * 100;
+    }
+
+     public double getDailyChange() {
+        if (openingPrice == 0) return 0;
+        return ((currentPrice - openingPrice) / openingPrice) * 100;
+    }
+
+    public double getMaxPrice() {
+        return priceHistory.stream().max(Double::compareTo).orElse(currentPrice);
+    }
+
+    public double getMinPrice() {
+        return priceHistory.stream().min(Double::compareTo).orElse(currentPrice);
+    }
+
+    public double getAveragePrice() {
+        return priceHistory.stream().mapToDouble(Double::doubleValue).average().orElse(currentPrice);
+    }
+
+    @Override
+    public String toString() {
+        return String.format("Stock{symbol='%s', price=%.2f, sector='%s', volume=%d}", 
+            symbol, currentPrice, sector, volume);
     }
 }
