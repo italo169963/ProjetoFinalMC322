@@ -1,0 +1,1 @@
+O Simulador de Mercado de Ações é um sistema interativo desenvolvido em Java que permite aos usuários simular operações de compra e venda de ações em um ambiente controlado. O sistema foi desenvolvido como projeto final da disciplina MC322 - Programação Orientada a Objetos.
